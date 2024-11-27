@@ -1,36 +1,40 @@
 // add "type": "module" to your package.json to run this with node or name the file with extension .mjs to prevent writing existing .js files
-import { LimitOrder, MakerTraits, Address, getLimitOrderContract, LimitOrderApiItem } from "@1inch/limit-order-sdk";
-import { Wallet, JsonRpcProvider, Contract } from 'ethers';
+import { LimitOrder, MakerTraits, Address } from "@1inch/limit-order-sdk";
 import { Api, getLimitOrderV4Domain } from "@1inch/limit-order-sdk";
 // import { AxiosProviderConnector } from "@1inch/limit-order-sdk/axios";
 
 import { AxiosProviderConnector } from "./AxiosProviderConnector";
-
+import fs, { readFile, writeFile } from "node:fs/promises"
+import path from "node:path";
 import dotenv from 'dotenv';
 import { aggregatorAbi } from "./aggregatorAbi";
+import { createWalletClient, erc20Abi, fallback, http } from "viem";
+import { avalanche } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
 dotenv.config();
 
-// ERC20 Token standard ABI for the approve function
-const erc20AbiFragment = [
-  "function approve(address spender, uint256 amount) external returns (bool)"
-];
-
-// it is a well-known test private key, do not use it in production
 const chainId = 43114; // Chain ID for AVAX
-const headers = { headers: { Authorization: `Bearer ${process.env.API_1INCH_KEY}`, accept: "application/json, text/plain, */*" } };
-const maker = new Wallet(process.env.PRIVATE_KEY as string);
-const expiresIn = 600n // 5m
+// const expiresIn = 86400n
+const expiresIn = 600n
+// const expiresIn = 60n
 const expiration = BigInt(Math.floor(Date.now() / 1000)) + expiresIn
 
-const makerAsset = "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7"; // WAVAX
-const takerAsset = "0xd586e7f844cea2f87f50152665bcbc2c279d8d70";  // DAI
-const makingAmount = 100000000000000000n;
-const takingAmount = 354591303896920600n;
+const orderParam = {
+  makerAsset: "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7", // WAVAX
+  takerAsset: "0xd586e7f844cea2f87f50152665bcbc2c279d8d70", // DAI
+  makingAmount: 100000000000000000n,
+  takingAmount: 354591303896920600n
+}
 
-//Orders must call the approve function prior to being submitted
-// Initialize ethers provider
-const provider = new JsonRpcProvider(`https://avax-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_KEY}`);
-const makerWallet = maker.connect(provider);
+const api_url = "https://avax-mainnet.g.alchemy.com/v2/cw-iL0LU4fvVloJM_i-Mak37uN--ZL7g";
+const transport = fallback([http(api_url)])
+
+const mainAccount = privateKeyToAccount(`0x${process.env.PRIVATE_KEY_WALLET}`)
+
+const mainWalletClient = createWalletClient({
+  transport,
+  account: mainAccount
+})
 
 // Approve the makerAsset contract to spend on behalf of the maker
 const domain: any = getLimitOrderV4Domain(chainId);
@@ -44,79 +48,61 @@ const api = new Api({
 // see MakerTraits.ts
 const makerTraits = MakerTraits.default()
   .withExpiration(expiration)
-  .withNonce(1n)
   .allowPartialFills() // If you wish to allow partial fills
   .allowMultipleFills(); // And assuming multiple fills are also okay
 
-// console.log(typedData);
 
 (async () => {
-  const order = new LimitOrder({
-    makerAsset: new Address(makerAsset),
-    takerAsset: new Address(takerAsset),
-    makingAmount: makingAmount,
-    takingAmount: takingAmount,
-    maker: new Address(maker.address),
-    salt: BigInt(Math.floor(Math.random() * 100000000)),
-    receiver: new Address(maker.address),
-  }, makerTraits);
+  // approve 
+  // await approveTransfer();
 
-  const typedData = order.getTypedData(domain)
-  const converted = { ...typedData.domain, chainId: chainId } // convert chainId to string, because ethers wants a bignumberish value
-  const signature = await maker.signTypedData(
-    converted,
-    { Order: typedData.types.Order },
-    typedData.message
-  )
+  // submit order
+  await submitOrderTransfer();
 
-  // approve aggregator contract that can transfer makingAmount
-  // await approve();
-
-  // get order by hash
-  const orderHash = order.getOrderHash(chainId)
-  console.log(orderHash);
-
-  // submit order 
-  // const orderInfo = await submitOrder(api, order, signature, orderHash);
-
-  // orderHash
-  // 0xb57f56caa0ce88ea96e300375a7935cb3e0965a6bd28d29cd97f51e445fd3152
-  //0xaf32dcd170b80cfcadfb96e44ed36f57b75b008e963c84950d955d11c77e4f95
-  //0x017ec99296a350ed00ad6c66d48f8e95c10c360658f63e68b939fde8ff8bf627
-  //0x294973fc68025f4ad9d181d7a0f150629e95a05684cfa7839cd38940eae78549
-
-  // makerTraits
-  //0x40000000000000000000000000000000000067443e4a00000000000000000000
-  //0x40000000000000000000000000000000000067443f3500000000000000000000
-  //0x4000000000000000000000000000000000006744412200000000000000000000
-  //0x4000000000000000000000000000000000006744414000000000000000000000
-
-  // // Cancel limit order
-  // await cancelOrder(orderInfo.data.makerTraits, orderHash);
-  // const cancel = await cancelOrder('0x4000000000000000000000000000000001006744448d00000000000000000000', '0xd845e58f765976f5d9401dd70fe5b70a97b4adc0c745adae961a7e98061222a4');
+  // Cancel limit order
+  // await cancelOrder('0x4000000000000000000000000000000000006747e9e700000000000000000000', '0xafd12f42a7de48e44c82ec9bcdaec8b67fccc990b9fcc249772a1d73347853f8');
 
   // Cancel limit orders
-  // const makerTraits: any = ['0x4000000000000000000000000000000000006744412200000000000000000000', '0x4000000000000000000000000000000000006744414000000000000000000000'];
-  // const orderHashes: any = ['0x017ec99296a350ed00ad6c66d48f8e95c10c360658f63e68b939fde8ff8bf627', '0x294973fc68025f4ad9d181d7a0f150629e95a05684cfa7839cd38940eae78549'];
-  // await cancelOrders(makerTraits, orderHashes);
-
+  // await cancelOrders();
 
 })();
 
-async function approve() {
-  // console.log('Approving makerAsset spend...', domain.verifyingContract, makerAsset);
-  try {
-    const makerAssetContract = new Contract(makerAsset, erc20AbiFragment, makerWallet);
-    const approveTx = await makerAssetContract.approve(domain.verifyingContract, makingAmount);
-    await approveTx.wait(); // Wait for the transaction to be mined
-    console.log('Approval successful');
-  } catch (error) {
-    console.error('Error in approving makerAsset spend:', error);
-    return { success: false, reason: "Failed to approve makerAsset spend." };
-  }
+
+async function approveTransfer() {
+  const approve = await mainWalletClient.writeContract({
+    address: orderParam.makerAsset as any,
+    abi: erc20Abi,
+    functionName: 'approve',
+    args: [domain.verifyingContract, orderParam.makingAmount],
+    chain: avalanche
+  });
+
+  console.log("approve", approve);
 }
 
-async function submitOrder(api: Api, order: LimitOrder, signature: string, orderHash: string): Promise<LimitOrderApiItem> {
+async function submitOrderTransfer() {
+  const order = new LimitOrder({
+    makerAsset: new Address(orderParam.makerAsset),
+    takerAsset: new Address(orderParam.takerAsset),
+    makingAmount: orderParam.makingAmount,
+    takingAmount: orderParam.takingAmount,
+    maker: new Address(mainAccount.address),
+    salt: BigInt(Math.floor(Math.random() * 100000000)),
+    receiver: new Address(mainAccount.address),
+  }, makerTraits);
+
+  const typedData = order.getTypedData(domain)
+  typedData.domain.chainId = chainId
+
+  const signature = await mainWalletClient.signTypedData({
+    domain: typedData.domain,
+    types: typedData.types,
+    primaryType: typedData.primaryType,
+    message: typedData.message,
+    account: mainAccount
+  })
+  const orderHash = order.getOrderHash(chainId)
+
   try {
     // @1inch/limit-order-sdk/dist/api/api.js, must edit the `submitOrder` method to return the promise
     await api.submitOrder(order, signature);
@@ -128,35 +114,87 @@ async function submitOrder(api: Api, order: LimitOrder, signature: string, order
   await new Promise(resolve => setTimeout(resolve, 2050));
 
   const orderInfo = await api.getOrderByHash(orderHash);
+  console.log("expireTime", orderInfo.createDateTime);
+  const createdInSeconds = BigInt(Math.floor(new Date(orderInfo.createDateTime).getTime() / 1000));
+  const expirationInSeconds = createdInSeconds + expiresIn;
+  const expirationDateMiniSeconds = new Date(Number(expirationInSeconds) * 1000);
+
+  await fs.appendFile("limitOrders.txt", `\n${JSON.stringify({
+    orderHash: orderInfo.orderHash,
+    makerTraits: orderInfo.data.makerTraits,
+    expiration: expirationDateMiniSeconds
+  })}`);
+
   console.log('orderInfo', orderInfo);
   console.log('makerTraits', orderInfo.data.makerTraits);
-
-  return orderInfo;
 }
 
 async function cancelOrder(makerTraits: string, orderHash: string) {
   try {
-    // const contractAddress = getLimitOrderContract(chainId);
-    const aggregatorContract = new Contract(domain.verifyingContract, aggregatorAbi, makerWallet);
-    // console.log("aggregatorContract", aggregatorContract);
+    const cancelOrder = await mainWalletClient.writeContract({
+      address: domain.verifyingContract,
+      abi: aggregatorAbi,
+      functionName: 'cancelOrder',
+      args: [makerTraits, orderHash],
+      chain: avalanche
+    });
 
-    const cancelOrder = await aggregatorContract.cancelOrder(makerTraits, orderHash);
-    const cancel = await cancelOrder.wait(); // Wait for the transaction to be mined
-    console.log("cancel", cancel);
+    const filePath = path.resolve("./limitOrders.txt");
+    const orderByTexts = await readFile(filePath, "utf-8");
+    const orderTextByLines = orderByTexts.split("\n");
+    console.log(orderTextByLines);
+
+    const validDataOrders = orderTextByLines.filter(item => item.trim() !== '');
+    const parsedDataOrders = validDataOrders.map(item => JSON.parse(item));
+    const writeDataOrders = parsedDataOrders.filter(order => new Date(order.expiration).getTime() >= Date.now() || order.orderHash !== orderHash);
+    console.log("writeDataOrders", writeDataOrders);
+
+    await writeFile(filePath, '', 'utf-8');
+    for (const order of writeDataOrders) {
+      await fs.appendFile("limitOrders.txt", `\n${JSON.stringify(order)}`);
+    }
+
+    // console.log("cancel", cancelOrder);
     console.log('Cancel Order Done');
   } catch (err) {
     console.log(err);
   }
 }
 
-async function cancelOrders(makerTraits: string[], orderHash: string[]) {
+async function cancelOrders() {
   try {
-    // const contractAddress = getLimitOrderContract(chainId);
-    const aggregatorContract = new Contract(domain.verifyingContract, aggregatorAbi, makerWallet);
+    const filePath = path.resolve("./limitOrders.txt");
+    const orderByTexts = await readFile(filePath, "utf-8");
+    const orderTextByLines = orderByTexts.split("\n");
+    console.log(orderTextByLines);
 
-    const cancelOrders = await aggregatorContract.cancelOrders(makerTraits, orderHash);
-    const cancels = await cancelOrders.wait(); // Wait for the transaction to be mined
-    console.log("cancels", cancels);
+    const validDataOrders = orderTextByLines.filter(item => item.trim() !== '');
+    const parsedDataOrders = validDataOrders.map(item => JSON.parse(item));
+    const cancelDatas = parsedDataOrders.filter(order => new Date(order.expiration).getTime() >= Date.now())
+
+    let makerTraits: string[] = []
+    let orderHash: string[] = []
+    for (const order of cancelDatas) {
+      makerTraits.push(order.makerTraits);
+      orderHash.push(order.orderHash);
+    }
+
+    console.log(makerTraits);
+    console.log(orderHash);
+
+
+
+    const cancelOrders = await mainWalletClient.writeContract({
+      address: domain.verifyingContract,
+      abi: aggregatorAbi,
+      functionName: 'cancelOrders',
+      args: [makerTraits, orderHash],
+      chain: avalanche
+    });
+
+    await writeFile(filePath, '', 'utf-8');
+
+    console.log("cancels", cancelOrders);
     console.log('Cancel Orders Done');
   } catch (err) {
     console.log(err);
