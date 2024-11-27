@@ -93,6 +93,7 @@ class Program {
                 receiver: new _limitordersdk.Address(this.walletAddress()),
                 salt: BigInt(Math.floor(Math.random() * 100000000))
             }, this.makerTraits);
+            console.log("order", order);
             const typedData = order.getTypedData(this.config.chain.id);
             typedData.domain.chainId = this.config.chain.id;
             const signature = await this.wallet.signTypedData({
@@ -102,15 +103,11 @@ class Program {
                 message: typedData.message,
                 account: this.wallet.account
             });
-            console.log("order: ", order);
             const orderHash = order.getOrderHash(this.config.chain.id);
-            console.log("orderHash: ", orderHash);
             await this.sdk.submitOrder(order, signature);
-            console.log("submitOrder: ");
-            await (0, _utils.sleep)(5000);
+            await (0, _utils.sleep)(2050);
             const orderInfo = await this.sdk.getOrderByHash(orderHash);
             console.log("orderInfo: ", orderInfo);
-            await (0, _utils.sleep)(2000);
             const orderExpiration = _luxon.DateTime.fromISO(orderInfo.createDateTime).plus({
                 seconds: Number(this.config.orderExpiration)
             });
@@ -119,7 +116,7 @@ class Program {
                 makerTraits: BigInt(orderInfo.data.makerTraits),
                 expiration: orderExpiration
             });
-        } catch (error) {
+        } catch (_error) {
             console.error("error");
         }
     }
@@ -173,7 +170,8 @@ class Program {
         this.wallet = wallet;
         this.config = config;
         this.currentOrders = [];
-        this.makerTraits = _limitordersdk.MakerTraits.default().withExpiration(600n).allowPartialFills() // If you wish to allow partial fills
+        const expiration = BigInt(Math.floor(Date.now() / 1000)) + this.config.orderExpiration;
+        this.makerTraits = _limitordersdk.MakerTraits.default().withExpiration(expiration).allowPartialFills() // If you wish to allow partial fills
         .allowMultipleFills() // And assuming multiple fills are also okay
         ;
         this.oneinch = new _axiosproviderconnector.OneInchClient(config.oneinchApiKey);

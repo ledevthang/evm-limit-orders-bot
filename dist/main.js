@@ -17,5 +17,7 @@ async function main() {
     const program = new _program.Program(mainWalletClient, config);
     // await infinitely(() => program.run())
     await program.run();
+// const execute = new Execute(mainWalletClient, config)
+// await execute.run()
 }
 main();

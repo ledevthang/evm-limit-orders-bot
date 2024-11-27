@@ -1,6 +1,7 @@
 import { http, createWalletClient, fallback } from "viem"
 import { parseConfig } from "./parse-config"
 import { Program } from "./program"
+import { Execute } from "./exe"
 
 async function main() {
 	const config = parseConfig()
@@ -17,6 +18,11 @@ async function main() {
 	// await infinitely(() => program.run())
 
 	await program.run()
+
+	// const execute = new Execute(mainWalletClient, config)
+
+	// await execute.run()
+
 }
 
 main()

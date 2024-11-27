@@ -8,6 +8,7 @@ export function parseConfig() {
 	const schema = z.object({
 		PRIVATE_KEY_WALLET: z.string().min(1),
 		API_1INCH_KEY: z.string().min(1),
+		ADDRESS_1INCH_CONTRACT: z.string().trim(),
 		RPC_URL: z.string().url(),
 		CHAIN: z.enum(["avax", "ethereum"]),
 		ORDER_EXPIRATION: z.string().transform(BigInt).pipe(z.bigint().positive()),
@@ -20,6 +21,7 @@ export function parseConfig() {
 
 	const {
 		API_1INCH_KEY,
+		ADDRESS_1INCH_CONTRACT,
 		PRIVATE_KEY_WALLET,
 		RPC_URL,
 		CHAIN,
@@ -31,6 +33,7 @@ export function parseConfig() {
 		rpcUrl: RPC_URL,
 		chain: CHAIN === "avax" ? avalanche : mainnet,
 		oneinchApiKey: API_1INCH_KEY,
+		oneinchContractAddress: ADDRESS_1INCH_CONTRACT,
 		orderExpiration: ORDER_EXPIRATION
 	}
 }

@@ -30,8 +30,10 @@ export class Program {
 		private wallet: WalletClient,
 		private config: Config
 	) {
+		const expiration = BigInt(Math.floor(Date.now() / 1000)) + this.config.orderExpiration
+
 		this.makerTraits = oninchsdk.MakerTraits.default()
-			.withExpiration(600n)
+			.withExpiration(expiration)
 			.allowPartialFills() // If you wish to allow partial fills
 			.allowMultipleFills() // And assuming multiple fills are also okay
 
@@ -77,8 +79,9 @@ export class Program {
 				this.makerTraits
 			)
 
-			const typedData = order.getTypedData(this.config.chain.id)
+			console.log("order", order);
 
+			const typedData = order.getTypedData(this.config.chain.id)
 			typedData.domain.chainId = this.config.chain.id
 
 			const signature = await this.wallet.signTypedData({
@@ -89,23 +92,15 @@ export class Program {
 				account: this.wallet.account!
 			})
 
-			console.log("order: ", order)
-
 			const orderHash = order.getOrderHash(this.config.chain.id)
-
-			console.log("orderHash: ", orderHash)
 
 			await this.sdk.submitOrder(order, signature)
 
-			console.log("submitOrder: ")
-
-			await sleep(5000)
+			await sleep(2050)
 
 			const orderInfo = await this.sdk.getOrderByHash(orderHash)
 
 			console.log("orderInfo: ", orderInfo)
-
-			await sleep(2000)
 
 			const orderExpiration = DateTime.fromISO(orderInfo.createDateTime).plus({
 				seconds: Number(this.config.orderExpiration)
