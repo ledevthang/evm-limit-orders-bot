@@ -10,14 +10,19 @@ async function main() {
     const transport = (0, _viem.fallback)([
         (0, _viem.http)(config.rpcUrl)
     ]);
+    const rpcClient = (0, _viem.createPublicClient)({
+        transport
+    });
     const mainWalletClient = (0, _viem.createWalletClient)({
         transport,
         account: config.mainWallet
     });
-    const program = new _program.Program(mainWalletClient, config);
-    // await infinitely(() => program.run())
+    const program = new _program.Program(mainWalletClient, rpcClient, config);
+    process.on("SIGINT", async ()=>{
+        await program.clearOrders();
+        console.log("clear all orders");
+        process.exit(1);
+    });
     await program.run();
-// const execute = new Execute(mainWalletClient, config)
-// await execute.run()
 }
 main();

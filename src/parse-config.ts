@@ -1,3 +1,4 @@
+import { isAddress } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { avalanche, mainnet } from "viem/chains"
 import { z } from "zod"
@@ -8,7 +9,6 @@ export function parseConfig() {
 	const schema = z.object({
 		PRIVATE_KEY_WALLET: z.string().min(1),
 		API_1INCH_KEY: z.string().min(1),
-		ADDRESS_1INCH_CONTRACT: z.string().trim(),
 		RPC_URL: z.string().url(),
 		CHAIN: z.enum(["avax", "ethereum"]),
 		ORDER_EXPIRATION: z.string().transform(BigInt).pipe(z.bigint().positive()),
@@ -16,16 +16,25 @@ export function parseConfig() {
 			.string()
 			.transform(Number)
 			.pipe(z.number().int().positive().min(1)),
-		ORDER_STEP: z.string().transform(Number).pipe(z.number().positive().min(1))
+		ORDER_STEP: z.string().transform(Number).pipe(z.number().positive().min(1)),
+		MAKER_ASSET: z.string().refine(isAddress, "invalid token addresss"),
+		TAKER_ASSET: z.string().refine(isAddress, "invalid token addresss"),
+		INTERVAL: z.string().transform(Number).pipe(z.number().positive()),
+		MAKING_AMOUNT: z.string().transform(Number).pipe(z.number().positive())
 	})
 
 	const {
 		API_1INCH_KEY,
-		ADDRESS_1INCH_CONTRACT,
 		PRIVATE_KEY_WALLET,
 		RPC_URL,
 		CHAIN,
-		ORDER_EXPIRATION
+		ORDER_EXPIRATION,
+		MAKER_ASSET,
+		NUMBER_LIMIT_ORDERS,
+		ORDER_STEP,
+		TAKER_ASSET,
+		INTERVAL,
+		MAKING_AMOUNT
 	} = schema.parse(process.env)
 
 	return {
@@ -33,7 +42,12 @@ export function parseConfig() {
 		rpcUrl: RPC_URL,
 		chain: CHAIN === "avax" ? avalanche : mainnet,
 		oneinchApiKey: API_1INCH_KEY,
-		oneinchContractAddress: ADDRESS_1INCH_CONTRACT,
-		orderExpiration: ORDER_EXPIRATION
+		orderExpiration: ORDER_EXPIRATION,
+		markerAsset: MAKER_ASSET,
+		numberLimitOrders: NUMBER_LIMIT_ORDERS,
+		orderStep: ORDER_STEP,
+		takerAsset: TAKER_ASSET,
+		interval: INTERVAL,
+		makingAmount: MAKING_AMOUNT
 	}
 }

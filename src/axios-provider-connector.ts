@@ -12,9 +12,6 @@ export class OneInchClient implements HttpProviderConnector {
 	private restTimeInMiliSeconds = 3000
 
 	async get<T>(url: string, headers: Headers) {
-		console.log("get url: ", url)
-		console.log("get headers: ", headers)
-
 		return this.handleLimitRequest(async () => {
 			const response = await axios.get<T>(url, {
 				headers
@@ -24,8 +21,6 @@ export class OneInchClient implements HttpProviderConnector {
 	}
 
 	async post<T>(url: string, data: unknown, headers: Headers) {
-		console.log("post url: ", url)
-		console.log("post headers: ", headers)
 		return this.handleLimitRequest(async () => {
 			const response = await axios.post<T>(url, data, {
 				headers

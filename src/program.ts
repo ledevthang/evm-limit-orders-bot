@@ -1,11 +1,17 @@
 import * as oninchsdk from "@1inch/limit-order-sdk"
 import { DateTime } from "luxon"
-import type { Address as EvmAddress, WalletClient } from "viem"
+import {
+	type Address as EvmAddress,
+	type PublicClient,
+	type WalletClient,
+	erc20Abi,
+	formatEther,
+	parseEther
+} from "viem"
 import { aggregatorAbi } from "./aggregator-abi"
 import { OneInchClient } from "./axios-provider-connector"
 import type { Config } from "./parse-config"
 import { sleep } from "./utils"
-import { AxiosProviderConnector } from "@1inch/limit-order-sdk/axios"
 
 type OrderParams = {
 	makerAsset: EvmAddress // in token
@@ -20,6 +26,8 @@ type Order = {
 	expiration: DateTime
 }
 
+const ONEINCH_CONTRACT = "0x111111125421cA6dc452d289314280a0f8842A65"
+
 export class Program {
 	private makerTraits: oninchsdk.MakerTraits
 	private sdk: oninchsdk.Api
@@ -28,12 +36,14 @@ export class Program {
 
 	constructor(
 		private wallet: WalletClient,
+		private rpcClient: PublicClient,
 		private config: Config
 	) {
-		const expiration = BigInt(Math.floor(Date.now() / 1000)) + this.config.orderExpiration
-
 		this.makerTraits = oninchsdk.MakerTraits.default()
-			.withExpiration(expiration)
+			.withExpiration(
+				BigInt(Math.floor(DateTime.now().toSeconds())) +
+					this.config.orderExpiration
+			)
 			.allowPartialFills() // If you wish to allow partial fills
 			.allowMultipleFills() // And assuming multiple fills are also okay
 
@@ -42,110 +52,69 @@ export class Program {
 		this.sdk = new oninchsdk.Api({
 			networkId: config.chain.id,
 			authKey: config.oneinchApiKey,
-			httpConnector: new AxiosProviderConnector()
+			httpConnector: this.oneinch
 		})
 	}
 
 	async run() {
-		await this.createOrder({
-			makerAsset: "0x63a72806098bd3d9520cc43356dd78afe5d386d9", // WAVAX
-			takerAsset: "0xd586e7f844cea2f87f50152665bcbc2c279d8d70", // DAI
-			makingAmount: 100000000000000000n,
-			takingAmount: 354591303896920600n
-		})
-		console.log("create ok")
+		const makingAmount = this.config.makingAmount
+		const makingAmountInWei = parseEther(makingAmount.toString())
+		await this.approveTransfer(makingAmountInWei)
 
-		await sleep(3000)
-
-		// console.log("currentOrders: ", this.currentOrders)
-
-		// await this.clearOrders()
-
-		// console.log("done")
-	}
-
-	private async createOrder(params: OrderParams) {
-		try {
-			const order = new oninchsdk.LimitOrder(
-				{
-					makerAsset: new oninchsdk.Address(params.makerAsset),
-					takerAsset: new oninchsdk.Address(params.takerAsset),
-					makingAmount: params.makingAmount,
-					takingAmount: params.takingAmount,
-					maker: new oninchsdk.Address(this.walletAddress()),
-					receiver: new oninchsdk.Address(this.walletAddress()),
-					salt: BigInt(Math.floor(Math.random() * 100_000_000))
-				},
-				this.makerTraits
+		for (;;) {
+			const takingAmount = await this.calculatePrice().then(
+				div => div * makingAmount
 			)
 
-			console.log("order", order);
+			for (let i = 1; i < this.config.numberLimitOrders; i++) {
+				const takingAmountInWei = parseEther(
+					(
+						takingAmount + percent(takingAmount, this.config.orderStep * i)
+					).toString()
+				)
 
-			const typedData = order.getTypedData(this.config.chain.id)
-			typedData.domain.chainId = this.config.chain.id
+				await this.createOrder({
+					makerAsset: this.config.markerAsset,
+					takerAsset: this.config.takerAsset,
+					makingAmount: makingAmountInWei,
+					takingAmount: takingAmountInWei
+				})
 
-			const signature = await this.wallet.signTypedData({
-				domain: typedData.domain,
-				types: typedData.types,
-				primaryType: typedData.primaryType,
-				message: typedData.message,
-				account: this.wallet.account!
-			})
+				console.log(
+					"made a order ",
+					Number(formatEther(makingAmountInWei)),
+					` ${this.config.markerAsset} for `,
+					Number(formatEther(takingAmountInWei)),
+					` ${this.config.takerAsset}`
+				)
+			}
 
-			const orderHash = order.getOrderHash(this.config.chain.id)
-
-			await this.sdk.submitOrder(order, signature)
-
-			await sleep(2050)
-
-			const orderInfo = await this.sdk.getOrderByHash(orderHash)
-
-			console.log("orderInfo: ", orderInfo)
-
-			const orderExpiration = DateTime.fromISO(orderInfo.createDateTime).plus({
-				seconds: Number(this.config.orderExpiration)
-			})
-
-			this.currentOrders.push({
-				orderHash: orderInfo.orderHash as EvmAddress,
-				makerTraits: BigInt(orderInfo.data.makerTraits),
-				expiration: orderExpiration
-			})
-		} catch (_error) {
-			console.error("error")
+			await sleep(this.config.interval)
+			await this.clearOrders()
 		}
 	}
 
-	private walletAddress() {
-		return this.wallet.account?.address!
-	}
+	public async clearOrders() {
+		const availableOrders = this.currentOrders.filter(
+			order => order.expiration.toSeconds() > DateTime.now().toSeconds()
+		)
 
-	private async cancelOrder(markerTraits: bigint, orderHash: EvmAddress) {
-		return this.wallet.writeContract({
-			address: "0x111111125421cA6dc452d289314280a0f8842A65",
-			abi: aggregatorAbi,
-			functionName: "cancelOrder",
-			args: [markerTraits, orderHash],
-			chain: this.config.chain,
-			account: this.wallet.account!
-		})
-	}
-
-	private async clearOrders() {
-		if (this.currentOrders.length < 1) {
+		if (availableOrders.length < 1) {
+			this.currentOrders = []
+			console.log("clear all orders")
 			return
 		}
 
 		const markerTraits: bigint[] = []
 		const orderHashes: EvmAddress[] = []
 
-		for (const order of this.currentOrders) {
+		for (const order of availableOrders) {
 			markerTraits.push(order.makerTraits)
 			orderHashes.push(order.orderHash)
 		}
 
-		const hash = await this.wallet.writeContract({
-			address: "0x111111125421cA6dc452d289314280a0f8842A65",
+		await this.wallet.writeContract({
+			address: ONEINCH_CONTRACT,
 			abi: aggregatorAbi,
 			functionName: "cancelOrders",
 			args: [markerTraits, orderHashes],
@@ -153,8 +122,90 @@ export class Program {
 			account: this.wallet.account!
 		})
 
-		console.log("hash: ", hash)
-
 		this.currentOrders = []
+		console.log("clear all orders")
 	}
+
+	private async createOrder(params: OrderParams) {
+		const order = new oninchsdk.LimitOrder(
+			{
+				makerAsset: new oninchsdk.Address(params.makerAsset),
+				takerAsset: new oninchsdk.Address(params.takerAsset),
+				makingAmount: params.makingAmount,
+				takingAmount: params.takingAmount,
+				maker: new oninchsdk.Address(this.walletAddress()),
+				receiver: new oninchsdk.Address(this.walletAddress()),
+				salt: BigInt(Math.floor(Math.random() * 100_000_000))
+			},
+			this.makerTraits
+		)
+
+		const typedData = order.getTypedData(this.config.chain.id)
+		typedData.domain.chainId = this.config.chain.id
+
+		const signature = await this.wallet.signTypedData({
+			domain: typedData.domain,
+			types: typedData.types,
+			primaryType: typedData.primaryType,
+			message: typedData.message,
+			account: this.wallet.account!
+		})
+
+		const orderHash = order.getOrderHash(this.config.chain.id)
+
+		await this.sdk.submitOrder(order, signature)
+
+		const orderInfo = await this.sdk.getOrderByHash(orderHash)
+
+		const orderExpiration = DateTime.fromISO(orderInfo.createDateTime).plus({
+			seconds: Number(this.config.orderExpiration)
+		})
+
+		this.currentOrders.push({
+			orderHash: orderInfo.orderHash as EvmAddress,
+			makerTraits: BigInt(orderInfo.data.makerTraits),
+			expiration: orderExpiration
+		})
+	}
+
+	private walletAddress() {
+		return this.wallet.account?.address!
+	}
+
+	private async approveTransfer(makingAmount: bigint) {
+		const allowance = await this.rpcClient.readContract({
+			address: this.config.markerAsset,
+			abi: erc20Abi,
+			functionName: "allowance",
+			args: [this.walletAddress(), ONEINCH_CONTRACT]
+		})
+
+		if (allowance >= makingAmount) return
+
+		await this.wallet.writeContract({
+			address: this.config.markerAsset,
+			abi: erc20Abi,
+			functionName: "approve",
+			args: [ONEINCH_CONTRACT, makingAmount],
+			chain: this.config.chain,
+			account: this.wallet.account!
+		})
+	}
+
+	private async calculatePrice() {
+		const price = await this.oneinch.spotPrice(this.config.chain.id, [
+			this.config.markerAsset,
+			this.config.takerAsset
+		])
+
+		const div =
+			Number(price[this.config.takerAsset]) /
+			Number(price[this.config.markerAsset])
+
+		return div
+	}
+}
+
+function percent(val: number, percentage: number) {
+	return (val / 100) * percentage
 }

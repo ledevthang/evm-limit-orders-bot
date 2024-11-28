@@ -32,8 +32,6 @@ function _interop_require_default(obj) {
 }
 class OneInchClient {
     async get(url, headers) {
-        console.log("get url: ", url);
-        console.log("get headers: ", headers);
         return this.handleLimitRequest(async ()=>{
             const response = await _axios.default.get(url, {
                 headers
@@ -42,8 +40,6 @@ class OneInchClient {
         });
     }
     async post(url, data, headers) {
-        console.log("post url: ", url);
-        console.log("post headers: ", headers);
         return this.handleLimitRequest(async ()=>{
             const response = await _axios.default.post(url, data, {
                 headers

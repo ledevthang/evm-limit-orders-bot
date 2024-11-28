@@ -1,28 +1,29 @@
-import { http, createWalletClient, fallback } from "viem"
+import { http, createPublicClient, createWalletClient, fallback } from "viem"
 import { parseConfig } from "./parse-config"
 import { Program } from "./program"
-import { Execute } from "./exe"
 
 async function main() {
 	const config = parseConfig()
 
 	const transport = fallback([http(config.rpcUrl)])
 
+	const rpcClient = createPublicClient({
+		transport
+	})
+
 	const mainWalletClient = createWalletClient({
 		transport,
 		account: config.mainWallet
 	})
 
-	const program = new Program(mainWalletClient, config)
+	const program = new Program(mainWalletClient, rpcClient, config)
 
-	// await infinitely(() => program.run())
+	process.on("SIGINT", async () => {
+		await program.clearOrders()
+		process.exit(1)
+	})
 
 	await program.run()
-
-	// const execute = new Execute(mainWalletClient, config)
-
-	// await execute.run()
-
 }
 
 main()
