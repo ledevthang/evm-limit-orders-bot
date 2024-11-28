@@ -1,0 +1,32 @@
+{
+	"name": "evm-limit-order-bot",
+	"version": "1.0.0",
+	"type": "commonjs",
+	"scripts": {
+		"start": "node --env-file=.env dist/main.js",
+		"release": "tsc --noEmit && rm -rf dist && swc --strip-leading-paths -d dist src",
+		"dev": "nodemon",
+		"type-check": "tsc --noEmit",
+		"lint": "biome lint --error-on-warnings ./src",
+		"format": "biome format ./src --fix",
+		"clean": "biome check ./src --write"
+	},
+	"license": "ISC",
+	"devDependencies": {
+		"@biomejs/biome": "1.9.4",
+		"@swc/cli": "^0.5.0",
+		"@swc/core": "^1.9.2",
+		"@types/luxon": "^3.4.2",
+		"@types/node-fetch": "^2.6.11",
+		"ts-node": "^10.9.2",
+		"typescript": "^5.5.4"
+	},
+	"dependencies": {
+		"@1inch/limit-order-sdk": "^4.9.3-rc.1",
+		"axios": "^1.7.7",
+		"luxon": "^3.5.0",
+		"ts-retry-promise": "^0.8.1",
+		"viem": "^2.19.4",
+		"zod": "^3.23.8"
+	}
+}
