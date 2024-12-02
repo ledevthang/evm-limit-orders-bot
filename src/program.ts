@@ -66,7 +66,7 @@ export class Program {
 				div => div * makingAmount
 			)
 
-			for (let i = 1; i < this.config.numberLimitOrders; i++) {
+			for (let i = 1; i <= this.config.numberLimitOrders; i++) {
 				const takingAmountInWei = parseEther(
 					(
 						takingAmount + percent(takingAmount, this.config.orderStep * i)
@@ -89,7 +89,7 @@ export class Program {
 				)
 			}
 
-			await sleep(this.config.interval)
+			await sleep(this.config.interval * 1000)
 			await this.clearOrders()
 		}
 	}
