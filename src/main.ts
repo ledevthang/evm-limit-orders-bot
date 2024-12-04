@@ -1,6 +1,7 @@
 import { http, createPublicClient, createWalletClient, fallback } from "viem"
 import { parseConfig } from "./parse-config"
 import { Program } from "./program"
+import { logErr } from "./utils"
 
 async function main() {
 	const config = parseConfig()
@@ -19,8 +20,13 @@ async function main() {
 	const program = new Program(mainWalletClient, rpcClient, config)
 
 	process.on("SIGINT", async () => {
-		await program.clearOrders()
-		process.exit(1)
+		try {
+			await program.clearOrders()
+		} catch (error) {
+			logErr(error)
+		} finally {
+			process.exit(1)
+		}
 	})
 
 	await program.run()

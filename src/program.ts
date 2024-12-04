@@ -11,7 +11,7 @@ import {
 import { aggregatorAbi } from "./aggregator-abi"
 import { OneInchClient } from "./axios-provider-connector"
 import type { Config } from "./parse-config"
-import { sleep } from "./utils"
+import { logErr, sleep } from "./utils"
 
 type OrderParams = {
 	makerAsset: EvmAddress // in token
@@ -62,35 +62,40 @@ export class Program {
 		await this.approveTransfer(makingAmountInWei)
 
 		for (;;) {
-			const takingAmount = await this.calculatePrice().then(
-				div => div * makingAmount
-			)
-
-			for (let i = 1; i <= this.config.numberLimitOrders; i++) {
-				const takingAmountInWei = parseEther(
-					(
-						takingAmount + percent(takingAmount, this.config.orderStep * i)
-					).toString()
+			try {
+				const takingAmount = await this.calculatePrice().then(
+					div => div * makingAmount
 				)
 
-				await this.createOrder({
-					makerAsset: this.config.markerAsset,
-					takerAsset: this.config.takerAsset,
-					makingAmount: makingAmountInWei,
-					takingAmount: takingAmountInWei
-				})
+				for (let i = 1; i <= this.config.numberLimitOrders; i++) {
+					const takingAmountInWei = parseEther(
+						(
+							takingAmount + percent(takingAmount, this.config.orderStep * i)
+						).toString()
+					)
 
-				console.log(
-					"made a order ",
-					Number(formatEther(makingAmountInWei)),
-					` ${this.config.markerAsset} for `,
-					Number(formatEther(takingAmountInWei)),
-					` ${this.config.takerAsset}`
-				)
+					await this.createOrder({
+						makerAsset: this.config.markerAsset,
+						takerAsset: this.config.takerAsset,
+						makingAmount: makingAmountInWei,
+						takingAmount: takingAmountInWei
+					})
+
+					console.log(
+						"made a order ",
+						Number(formatEther(makingAmountInWei)),
+						` ${this.config.markerAsset} for `,
+						Number(formatEther(takingAmountInWei)),
+						` ${this.config.takerAsset}`
+					)
+				}
+
+				await sleep(this.config.interval * 1000)
+
+				await this.clearOrders()
+			} catch (error) {
+				logErr(error)
 			}
-
-			await sleep(this.config.interval * 1000)
-			await this.clearOrders()
 		}
 	}
 
