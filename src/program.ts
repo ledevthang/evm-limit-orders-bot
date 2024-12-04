@@ -90,12 +90,12 @@ export class Program {
 					)
 				}
 
-				await sleep(this.config.interval * 1000)
-
 				await this.clearOrders()
 			} catch (error) {
 				logErr(error)
 			}
+
+			await sleep(this.config.interval * 1000)
 		}
 	}
 
@@ -105,7 +105,6 @@ export class Program {
 		)
 
 		if (availableOrders.length < 1) {
-			this.currentOrders = []
 			console.log("clear all orders")
 			return
 		}
@@ -128,6 +127,7 @@ export class Program {
 		})
 
 		this.currentOrders = []
+
 		console.log("clear all orders")
 	}
 
