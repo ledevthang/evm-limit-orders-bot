@@ -24,6 +24,7 @@
 	"dependencies": {
 		"@1inch/limit-order-sdk": "^4.9.3-rc.1",
 		"axios": "^1.7.7",
+		"decimal.js": "^10.4.3",
 		"luxon": "^3.5.0",
 		"ts-retry-promise": "^0.8.1",
 		"viem": "^2.19.4",

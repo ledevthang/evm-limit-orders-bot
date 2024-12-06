@@ -1,4 +1,5 @@
 import * as oninchsdk from "@1inch/limit-order-sdk"
+import Decimal from "decimal.js"
 import { DateTime } from "luxon"
 import {
 	type Address as EvmAddress,
@@ -57,21 +58,19 @@ export class Program {
 	}
 
 	async run() {
-		const makingAmount = this.config.makingAmount
-		const makingAmountInWei = parseEther(makingAmount.toString())
+		const makingAmount = new Decimal(this.config.makingAmount)
+		const makingAmountInWei = parseWei(makingAmount)
 		await this.approveTransfer(makingAmountInWei)
 
 		for (;;) {
 			try {
-				const takingAmount = await this.calculatePrice().then(
-					div => div * makingAmount
+				const takingAmount = await this.calculatePrice().then(div =>
+					div.mul(makingAmount)
 				)
 
 				for (let i = 1; i <= this.config.numberLimitOrders; i++) {
-					const takingAmountInWei = parseEther(
-						(
-							takingAmount + percent(takingAmount, this.config.orderStep * i)
-						).toString()
+					const takingAmountInWei = parseWei(
+						takingAmount.plus(percent(takingAmount, this.config.orderStep * i))
 					)
 
 					await this.createOrder({
@@ -83,14 +82,14 @@ export class Program {
 
 					console.log(
 						"made a order ",
-						Number(formatEther(makingAmountInWei)),
+						new Decimal(formatEther(makingAmountInWei)).toFixed(),
 						` ${this.config.markerAsset} for `,
-						Number(formatEther(takingAmountInWei)),
+						new Decimal(formatEther(takingAmountInWei)).toFixed(),
 						` ${this.config.takerAsset}`
 					)
 				}
 
-				await this.clearOrders()
+				// await this.clearOrders()
 			} catch (error) {
 				logErr(error)
 			}
@@ -203,14 +202,18 @@ export class Program {
 			this.config.takerAsset
 		])
 
-		const div =
-			Number(price[this.config.takerAsset]) /
-			Number(price[this.config.markerAsset])
+		const div = new Decimal(price[this.config.takerAsset]).div(
+			new Decimal(price[this.config.markerAsset])
+		)
 
 		return div
 	}
 }
 
-function percent(val: number, percentage: number) {
-	return (val / 100) * percentage
+function percent(val: Decimal, percentage: number) {
+	return val.div(100).mul(percentage)
+}
+
+function parseWei(val: Decimal) {
+	return parseEther(val.toFixed())
 }
