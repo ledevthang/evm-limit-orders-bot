@@ -3,6 +3,7 @@ import { isHex } from "viem"
 import { avalanche, mainnet } from "viem/chains"
 import { z } from "zod"
 import { evmAddress, notEmptyStr, positiveNumber } from "./parsers"
+import path from "node:path"
 
 export type Config = z.infer<typeof schema>
 
@@ -27,7 +28,13 @@ const schema = z.object({
 })
 
 export function parseConfig() {
-	const raw = fs.readFileSync("config.json", "utf-8")
+	const configFilePath = path
+		.resolve(__dirname, "config.json")
+		.replace("/dist", "")
 
-	return schema.parse(JSON.parse(raw))
+	const config = schema.parse(
+		JSON.parse(fs.readFileSync(configFilePath, "utf-8"))
+	)
+
+	return config
 }

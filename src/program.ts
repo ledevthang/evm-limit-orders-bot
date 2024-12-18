@@ -59,6 +59,13 @@ export class Program {
 	}
 
 	public async run() {
+		Logger.info(
+			`Staring evm limit order bot with pairs ${this.config.input_asset} and ${this.config.output_asset}`
+		)
+		Logger.info(`Wallet ${this.walletAddress()}...`)
+		Logger.info(`1Inch contract ${ONEINCH_CONTRACT}`)
+		Logger.newLine()
+
 		const inAssetSymbol = await this.rpcClient.readContract({
 			abi: erc20Abi,
 			address: this.config.input_asset,
@@ -112,6 +119,9 @@ export class Program {
 			} catch (error) {
 				logErr(error)
 			} finally {
+				Logger.info("Sleeping... before new cycle")
+				Logger.newLine()
+
 				await sleep(this.config.cyle_delay * 1000)
 			}
 		}
