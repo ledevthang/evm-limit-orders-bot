@@ -11,8 +11,9 @@ import {
 } from "viem"
 import { aggregatorAbi } from "./aggregator-abi"
 import { OneInchClient } from "./axios-provider-connector"
+import { Logger } from "./logger"
 import type { Config } from "./parse-config"
-import { logErr, sleep } from "./utils"
+import { logErr, random, sleep } from "./utils"
 
 type OrderParams = {
 	makerAsset: EvmAddress // in token
@@ -43,68 +44,95 @@ export class Program {
 		this.makerTraits = oninchsdk.MakerTraits.default()
 			.withExpiration(
 				BigInt(Math.floor(DateTime.now().toSeconds())) +
-					this.config.orderExpiration
+					BigInt(this.config.order_expiration)
 			)
 			.allowPartialFills() // If you wish to allow partial fills
 			.allowMultipleFills() // And assuming multiple fills are also okay
 
-		this.oneinch = new OneInchClient(config.oneinchApiKey)
+		this.oneinch = new OneInchClient(config.one_inch_api_key)
 
 		this.sdk = new oninchsdk.Api({
 			networkId: config.chain.id,
-			authKey: config.oneinchApiKey,
+			authKey: config.one_inch_api_key,
 			httpConnector: this.oneinch
 		})
 	}
 
-	async run() {
-		const makingAmount = new Decimal(this.config.makingAmount)
+	public async run() {
+		const inAssetSymbol = await this.rpcClient.readContract({
+			abi: erc20Abi,
+			address: this.config.input_asset,
+			functionName: "symbol"
+		})
+
+		const outAssetSymbol = await this.rpcClient.readContract({
+			abi: erc20Abi,
+			address: this.config.output_asset,
+			functionName: "symbol"
+		})
+
+		const makingAmount = new Decimal(
+			random(this.config.min_quantity, this.config.max_auantity)
+		)
+
 		const makingAmountInWei = parseWei(makingAmount)
+
 		await this.approveTransfer(makingAmountInWei)
 
 		for (;;) {
 			try {
-				const takingAmount = await this.calculatePrice().then(div =>
-					div.mul(makingAmount)
-				)
-
-				for (let i = 1; i <= this.config.numberLimitOrders; i++) {
-					const takingAmountInWei = parseWei(
-						takingAmount.plus(percent(takingAmount, this.config.orderStep * i))
+				for (let i = 1; i <= this.config.order_count; i++) {
+					const takingAmount = await this.calculatePrice().then(div =>
+						div.mul(makingAmount)
 					)
 
-					await this.createOrder({
-						makerAsset: this.config.markerAsset,
-						takerAsset: this.config.takerAsset,
+					const takingAmountInWei = parseWei(
+						takingAmount.plus(percent(takingAmount, this.config.order_step * i))
+					)
+
+					const hash = await this.createOrder({
+						makerAsset: this.config.input_asset,
+						takerAsset: this.config.output_asset,
 						makingAmount: makingAmountInWei,
 						takingAmount: takingAmountInWei
 					})
 
-					console.log(
-						"made a order ",
-						new Decimal(formatEther(makingAmountInWei)).toFixed(),
-						` ${this.config.markerAsset} for `,
-						new Decimal(formatEther(takingAmountInWei)).toFixed(),
-						` ${this.config.takerAsset}`
+					const uiInAmount = new Decimal(
+						formatEther(makingAmountInWei)
+					).toFixed()
+
+					const uiOutAmount = new Decimal(
+						formatEther(takingAmountInWei)
+					).toFixed()
+
+					Logger.info(
+						`made a order ${uiInAmount} ${inAssetSymbol} for ${uiOutAmount} ${outAssetSymbol} with hash: ${hash}`
 					)
 				}
-
-				// await this.clearOrders()
 			} catch (error) {
 				logErr(error)
+			} finally {
+				await sleep(this.config.cyle_delay * 1000)
 			}
-
-			await sleep(this.config.interval * 1000)
 		}
 	}
 
-	public async clearOrders() {
+	public scheduleClearingOrders() {
+		setInterval(async () => {
+			try {
+				await this.clearOrders()
+			} catch (error) {
+				logErr(error)
+			}
+		}, this.config.cancel_delay * 1000)
+	}
+
+	private async clearOrders() {
 		const availableOrders = this.currentOrders.filter(
 			order => order.expiration.toSeconds() > DateTime.now().toSeconds()
 		)
 
 		if (availableOrders.length < 1) {
-			console.log("clear all orders")
 			return
 		}
 
@@ -127,7 +155,7 @@ export class Program {
 
 		this.currentOrders = []
 
-		console.log("clear all orders")
+		Logger.info("clear all orders")
 	}
 
 	private async createOrder(params: OrderParams) {
@@ -162,7 +190,7 @@ export class Program {
 		const orderInfo = await this.sdk.getOrderByHash(orderHash)
 
 		const orderExpiration = DateTime.fromISO(orderInfo.createDateTime).plus({
-			seconds: Number(this.config.orderExpiration)
+			seconds: Number(this.config.order_expiration)
 		})
 
 		this.currentOrders.push({
@@ -170,6 +198,8 @@ export class Program {
 			makerTraits: BigInt(orderInfo.data.makerTraits),
 			expiration: orderExpiration
 		})
+
+		return orderHash
 	}
 
 	private walletAddress() {
@@ -178,7 +208,7 @@ export class Program {
 
 	private async approveTransfer(makingAmount: bigint) {
 		const allowance = await this.rpcClient.readContract({
-			address: this.config.markerAsset,
+			address: this.config.input_asset,
 			abi: erc20Abi,
 			functionName: "allowance",
 			args: [this.walletAddress(), ONEINCH_CONTRACT]
@@ -187,7 +217,7 @@ export class Program {
 		if (allowance >= makingAmount) return
 
 		await this.wallet.writeContract({
-			address: this.config.markerAsset,
+			address: this.config.input_asset,
 			abi: erc20Abi,
 			functionName: "approve",
 			args: [ONEINCH_CONTRACT, makingAmount],
@@ -198,12 +228,12 @@ export class Program {
 
 	private async calculatePrice() {
 		const price = await this.oneinch.spotPrice(this.config.chain.id, [
-			this.config.markerAsset,
-			this.config.takerAsset
+			this.config.input_asset,
+			this.config.output_asset
 		])
 
-		const div = new Decimal(price[this.config.takerAsset]).div(
-			new Decimal(price[this.config.markerAsset])
+		const div = new Decimal(price[this.config.input_asset]).div(
+			new Decimal(price[this.config.output_asset])
 		)
 
 		return div

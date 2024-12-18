@@ -1,11 +1,12 @@
-import { http, createPublicClient, createWalletClient, fallback } from "viem"
+import { http, createPublicClient, createWalletClient } from "viem"
+import { privateKeyToAccount } from "viem/accounts"
 import { parseConfig } from "./parse-config"
 import { Program } from "./program"
 
 async function main() {
 	const config = parseConfig()
 
-	const transport = fallback([http(config.rpcUrl)])
+	const transport = http(config.rpc_url)
 
 	const rpcClient = createPublicClient({
 		transport
@@ -13,20 +14,12 @@ async function main() {
 
 	const mainWalletClient = createWalletClient({
 		transport,
-		account: config.mainWallet
+		account: privateKeyToAccount(config.private_key)
 	})
 
 	const program = new Program(mainWalletClient, rpcClient, config)
 
-	// process.on("SIGINT", async () => {
-	// 	await cleanUp(program)
-	// })
-	// process.on("SIGUSR1", async () => {
-	// 	await cleanUp(program)
-	// })
-	// process.on("SIGUSR2", async () => {
-	// 	await cleanUp(program)
-	// })
+	program.scheduleClearingOrders()
 
 	await program.run()
 }

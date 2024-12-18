@@ -1,7 +1,6 @@
 import type { Headers, HttpProviderConnector } from "@1inch/limit-order-sdk"
 import axios from "axios"
 import { DateTime } from "luxon"
-import { retry } from "ts-retry-promise"
 import type { Address } from "viem"
 import { sleep } from "./utils.js"
 
@@ -12,7 +11,7 @@ export class OneInchClient implements HttpProviderConnector {
 	private restTimeInMiliSeconds = 3000
 
 	async get<T>(url: string, headers: Headers) {
-		return this.handleLimitRequest(async () => {
+		return this.handleLimit(async () => {
 			const response = await axios.get<T>(url, {
 				headers
 			})
@@ -21,7 +20,7 @@ export class OneInchClient implements HttpProviderConnector {
 	}
 
 	async post<T>(url: string, data: unknown, headers: Headers) {
-		return this.handleLimitRequest(async () => {
+		return this.handleLimit(async () => {
 			const response = await axios.post<T>(url, data, {
 				headers
 			})
@@ -30,7 +29,7 @@ export class OneInchClient implements HttpProviderConnector {
 	}
 
 	async spotPrice<T extends Address>(chainId: number, address: T[]) {
-		return this.handleLimitRequest(async () => {
+		return this.handleLimit(async () => {
 			const response = await axios.get<Record<T, string>>(
 				`https://api.1inch.dev/price/v1.1/${chainId}/${address}?currency=USD`,
 				{
@@ -40,11 +39,12 @@ export class OneInchClient implements HttpProviderConnector {
 					}
 				}
 			)
+
 			return response.data
 		})
 	}
 
-	private async handleLimitRequest<T>(thunk: () => Promise<T>): Promise<T> {
+	private async handleLimit<T>(thunk: () => Promise<T>): Promise<T> {
 		while (
 			DateTime.now().toSeconds() - this.lastimeCalling.toSeconds() >
 			this.restTimeInMiliSeconds
@@ -53,11 +53,7 @@ export class OneInchClient implements HttpProviderConnector {
 
 		this.lastimeCalling = DateTime.now()
 
-		const result = await retry(thunk, {
-			retries: 6,
-			delay: 1500,
-			timeout: "INFINITELY"
-		})
+		const result = await thunk()
 
 		await sleep(this.restTimeInMiliSeconds)
 
