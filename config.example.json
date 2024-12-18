@@ -1,0 +1,13 @@
+{
+	"chain": "avax",
+	"rpc_url": "",
+	"private_key": "",
+	"input_asset": "",
+	"output_asset": "",
+	"number_count": 3,
+	"min_quantity": 0.023,
+	"max_auantity": 0.025,
+	"order_step": 2.2,
+	"cyle_delay": 30,
+	"cancel_delay": 28
+}
