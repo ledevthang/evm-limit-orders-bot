@@ -1,13 +1,17 @@
 {
-	"chain": "avax",
-	"rpc_url": "",
 	"private_key": "",
-	"input_asset": "",
-	"output_asset": "",
+	"chain": "avax",
+	"one_inch_api_key": "",
+	"rpc_url": "",
+	"input_asset": "0x63a72806098bd3d9520cc43356dd78afe5d386d9",
+	"output_asset": "0xd586e7f844cea2f87f50152665bcbc2c279d8d70",
 	"number_count": 3,
 	"min_quantity": 0.023,
 	"max_auantity": 0.025,
-	"order_step": 2.2,
-	"cyle_delay": 30,
-	"cancel_delay": 28
+	"order_step": 1.2,
+	"order_count": 3,
+	"cycle_delay": 30,
+	"cancel_delay": 60,
+	"delay_per_order": 3,
+	"order_expiration": 3600
 }
