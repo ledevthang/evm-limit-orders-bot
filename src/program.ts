@@ -28,18 +28,21 @@ type Order = {
 	expiration: DateTime
 }
 
-const ONEINCH_CONTRACT = "0x111111125421cA6dc452d289314280a0f8842A65"
+const ONEINCH_AGGREGATOR_CONTRACT = "0x111111125421cA6dc452d289314280a0f8842A65"
 
 export class Program {
 	private makerTraits: oninchsdk.MakerTraits
 	private sdk: oninchsdk.Api
 	private oneinch: OneInchClient
 	private currentOrders: Order[] = []
+	private current_order_index = 1
 
 	constructor(
 		private wallet: WalletClient,
 		private rpcClient: PublicClient,
-		private config: Config
+		private config: Config,
+		private inAssetSymbol: string,
+		private outAssetSymbol: string
 	) {
 		this.makerTraits = oninchsdk.MakerTraits.default()
 			.withExpiration(
@@ -60,24 +63,25 @@ export class Program {
 
 	public async run() {
 		Logger.info(
-			`Staring evm limit order bot with pairs ${this.config.input_asset} and ${this.config.output_asset}`
+			`Staring evm limit order bot with pairs ${this.inAssetSymbol} and ${this.outAssetSymbol}`
 		)
 		Logger.info(`Wallet ${this.walletAddress()}...`)
-		Logger.info(`1Inch contract ${ONEINCH_CONTRACT}`)
+		Logger.info(`1Inch aggregator contract ${ONEINCH_AGGREGATOR_CONTRACT}`)
 		Logger.newLine()
 
-		const inAssetSymbol = await this.rpcClient.readContract({
-			abi: erc20Abi,
-			address: this.config.input_asset,
-			functionName: "symbol"
-		})
+		for (;;) {
+			try {
+				await this.unsafeRun()
+			} catch (error) {
+				logErr(error)
+				Logger.info("Retrying...")
 
-		const outAssetSymbol = await this.rpcClient.readContract({
-			abi: erc20Abi,
-			address: this.config.output_asset,
-			functionName: "symbol"
-		})
+				await sleep(3000)
+			}
+		}
+	}
 
+	private async unsafeRun() {
 		const makingAmount = new Decimal(
 			random(this.config.min_quantity, this.config.max_auantity)
 		)
@@ -87,43 +91,42 @@ export class Program {
 		await this.approveTransfer(makingAmountInWei)
 
 		for (;;) {
-			try {
-				for (let i = 1; i <= this.config.order_count; i++) {
-					const takingAmount = await this.calculatePrice().then(div =>
-						div.mul(makingAmount)
+			for (
+				;
+				this.current_order_index <= this.config.order_count;
+				this.current_order_index++
+			) {
+				const takingAmount = await this.calculatePriceInDivOut().then(div =>
+					div.mul(makingAmount)
+				)
+
+				const takingAmountInWei = parseWei(
+					takingAmount.plus(
+						decimalPercent(
+							takingAmount,
+							this.config.order_step * this.current_order_index
+						)
 					)
+				)
 
-					const takingAmountInWei = parseWei(
-						takingAmount.plus(percent(takingAmount, this.config.order_step * i))
-					)
+				const hash = await this.createOrder({
+					makerAsset: this.config.input_asset,
+					takerAsset: this.config.output_asset,
+					makingAmount: makingAmountInWei,
+					takingAmount: takingAmountInWei
+				})
 
-					const hash = await this.createOrder({
-						makerAsset: this.config.input_asset,
-						takerAsset: this.config.output_asset,
-						makingAmount: makingAmountInWei,
-						takingAmount: takingAmountInWei
-					})
-
-					const uiInAmount = new Decimal(
-						formatEther(makingAmountInWei)
-					).toFixed()
-
-					const uiOutAmount = new Decimal(
-						formatEther(takingAmountInWei)
-					).toFixed()
-
-					Logger.info(
-						`made a order ${uiInAmount} ${inAssetSymbol} for ${uiOutAmount} ${outAssetSymbol} with hash: ${hash}`
-					)
-				}
-			} catch (error) {
-				logErr(error)
-			} finally {
-				Logger.info("Sleeping... before new cycle")
-				Logger.newLine()
-
-				await sleep(this.config.cyle_delay * 1000)
+				Logger.info(
+					`Made a order ${formatEther(makingAmountInWei)} ${this.inAssetSymbol} for ${formatEther(takingAmountInWei)} ${this.outAssetSymbol} with hash: ${hash}`
+				)
+				await sleep(this.config.delay_per_order * 1000)
 			}
+
+			Logger.info("Sleeping before new cycle...")
+			Logger.newLine()
+
+			this.current_order_index = 1
+			await sleep(this.config.cycle_delay * 1000)
 		}
 	}
 
@@ -155,7 +158,7 @@ export class Program {
 		}
 
 		await this.wallet.writeContract({
-			address: ONEINCH_CONTRACT,
+			address: ONEINCH_AGGREGATOR_CONTRACT,
 			abi: aggregatorAbi,
 			functionName: "cancelOrders",
 			args: [markerTraits, orderHashes],
@@ -165,7 +168,8 @@ export class Program {
 
 		this.currentOrders = []
 
-		Logger.info("clear all orders")
+		Logger.info("Cleared all orders")
+		Logger.newLine()
 	}
 
 	private async createOrder(params: OrderParams) {
@@ -221,7 +225,7 @@ export class Program {
 			address: this.config.input_asset,
 			abi: erc20Abi,
 			functionName: "allowance",
-			args: [this.walletAddress(), ONEINCH_CONTRACT]
+			args: [this.walletAddress(), ONEINCH_AGGREGATOR_CONTRACT]
 		})
 
 		if (allowance >= makingAmount) return
@@ -230,13 +234,13 @@ export class Program {
 			address: this.config.input_asset,
 			abi: erc20Abi,
 			functionName: "approve",
-			args: [ONEINCH_CONTRACT, makingAmount],
+			args: [ONEINCH_AGGREGATOR_CONTRACT, makingAmount],
 			chain: this.config.chain,
 			account: this.wallet.account!
 		})
 	}
 
-	private async calculatePrice() {
+	private async calculatePriceInDivOut() {
 		const price = await this.oneinch.spotPrice(this.config.chain.id, [
 			this.config.input_asset,
 			this.config.output_asset
@@ -250,7 +254,7 @@ export class Program {
 	}
 }
 
-function percent(val: Decimal, percentage: number) {
+function decimalPercent(val: Decimal, percentage: number) {
 	return val.div(100).mul(percentage)
 }
 

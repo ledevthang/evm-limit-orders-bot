@@ -1,9 +1,9 @@
 import fs from "node:fs"
+import path from "node:path"
 import { isHex } from "viem"
 import { avalanche, mainnet } from "viem/chains"
 import { z } from "zod"
 import { evmAddress, notEmptyStr, positiveNumber } from "./parsers"
-import path from "node:path"
 
 export type Config = z.infer<typeof schema>
 
@@ -14,7 +14,9 @@ const schema = z.object({
 		.default("ether")
 		.transform(chain => (chain === "avax" ? avalanche : mainnet)),
 	rpc_url: z.string().url(),
-	private_key: notEmptyStr().refine(isHex, "expected a hex string"),
+	private_key: notEmptyStr()
+		.transform(pk => (pk.startsWith("0x") ? pk : `0x${pk}`))
+		.refine(isHex, "expected a hex string"),
 	one_inch_api_key: notEmptyStr(),
 	input_asset: evmAddress(),
 	output_asset: evmAddress(),
@@ -23,8 +25,9 @@ const schema = z.object({
 	min_quantity: positiveNumber(),
 	max_auantity: positiveNumber(),
 	order_step: positiveNumber(),
-	cyle_delay: positiveNumber(),
-	cancel_delay: positiveNumber()
+	cycle_delay: positiveNumber(),
+	cancel_delay: positiveNumber(),
+	delay_per_order: positiveNumber()
 })
 
 export function parseConfig() {
